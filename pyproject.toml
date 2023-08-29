@@ -11,6 +11,7 @@ django = "^4.2.4"
 django-jinja = "^2.10.2"
 black = "^23.7.0"
 django-extensions = "^3.2.3"
+django-compressor = "^4.4"
 
 
 [build-system]
