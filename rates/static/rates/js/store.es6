@@ -282,6 +282,8 @@ export const RateStore = class extends EventTarget {
     if (cellID.includes("month")) {
       // Months can be a max of 2 digits
       let status = validate({ value: value, regex: /^\d{1,2}$/ });
+      console.log("value", value);
+      console.log("status", status);
 
       if (status.isValid === false) {
         row.months.error = status.message;

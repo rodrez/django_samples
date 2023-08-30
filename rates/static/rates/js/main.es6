@@ -9,11 +9,14 @@ import {
 } from "./utils.es6";
 import { createInput } from "./ui.es6";
 
-let queue = [];
+let savingQueue = [];
 
-const processQueue = () => {
-  queue.forEach((item) => {});
-};
+async function processQueue() {
+  while (savingQueue.length > 0) {
+    const item = savingQueue.shift();
+    await item();
+  }
+}
 
 const Rates = new RateStore("enhanced-rates");
 
@@ -508,6 +511,5 @@ const RateApp = {
 
 RateApp.init();
 
-//TODO: Broke the updateCell needs fix
 //TODO: Finish backend implementation - 90%
 //TODO: Add functionality to paste blocks of excel
