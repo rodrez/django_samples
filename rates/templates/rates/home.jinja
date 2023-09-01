@@ -7,8 +7,16 @@
 </head>
 
 <body>
-    <form data-rate="rate-form">
+    <form method="POST" data-rate="rate-form">
     {% csrf_token %}
+
+    {% if form %}
+        {{ form }}
+    {% endif %}
+
+    {% if error %}
+        {{ error }}
+    {% endif %}
     <!-- Using this field to access the last_year from js -->
     <input class="hidden" id="latest-year" value="{{ last_year }}" />
     <div class="w-10/12 mx-auto justify-center gap-x-4">
@@ -36,7 +44,8 @@
                 class="w-52 mt-4 rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
                 Add Year Range
             </button>
-            <button data-rate="update-rate"
+            <button
+                    type="submit" data-rate="update-rate"
                 class="w-52 mt-4 rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
                 Update Rates
             </button>

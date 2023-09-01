@@ -1,253 +1,251 @@
-import { notify } from "./notify.es6";
-import { RateStore } from "./store.es6";
-import {
-  camelCase,
-  debounce,
-  delegate,
-  getUrlHash,
-  insertHTML,
-} from "./utils.es6";
-import { createInput } from "./ui.es6";
-
-let savingQueue = [];
-
-async function processQueue() {
-  while (savingQueue.length > 0) {
-    const item = savingQueue.shift();
-    await item();
-  }
-}
+import {RateStore} from "./store.es6";
+import {camelCase, debounce, delegate, getUrlHash, insertHTML,} from "./utils.es6";
+import {createInput} from "./ui.es6";
 
 const Rates = new RateStore("enhanced-rates");
 
 const RateApp = {
-  elements: {
-    headerButton: document.querySelector('[data-rate="add-header"]'),
-    yearRangeButton: document.querySelector('[data-rate="add-year-range"]'),
-    updateRateButton: document.querySelector('[data-rate="update-rate"]'),
-    // Must-have for posting data to Django
-    csrfInput: document.querySelector('[name="csrfmiddlewaretoken"]'),
-    headers: document.querySelector('[data-rate="headers"]'),
-    yearRanges: document.querySelector('[data-rate="year-ranges"]'),
-  },
-  handlers: {
-    cellInputChange: (_, ids, e) => {
-      const cellId = e.target.dataset.id;
-      const newValue = e.target.value;
-
-      // If the the event key is Tab, we will simply set the focus
-      if (e.key === "Tab") {
-        Rates.setFocusedInput({
-          inputID: cellId,
-          cursorPosition: e.target.selectionStart,
-        });
-        return;
-      }
-
-      if (e.target.name.includes("Year")) {
-        const yearType = e.target.name;
-        const yearRangeID = ids.yearRange;
-        const year = e.target.value;
-        if (cellId === Rates.rates.focusedInput) {
-          return;
-        }
-        Rates.setFocusedInput(cellId, e.target.selectionStart);
-        Rates.updateYear(yearRangeID, year, yearType);
-        return;
-      }
-
-      const nearestRow = e.target.closest("[data-rate='rate-row']");
-
-      if (cellId === Rates.rates.focusedInput) {
-        return;
-      }
-      Rates.setFocusedInput({
-        inputID: cellId,
-        cursorPosition: e.target.selectionStart,
-      });
-      Rates.updateCell(ids.yearRange, nearestRow.dataset.id, cellId, newValue);
+    elements: {
+        headerButton: document.querySelector('[data-rate="add-header"]'),
+        yearRangeButton: document.querySelector('[data-rate="add-year-range"]'),
+        updateRateButton: document.querySelector('[data-rate="update-rate"]'),
+        // Must-have for posting data to Django
+        csrfInput: document.querySelector('[name="csrfmiddlewaretoken"]'),
+        headers: document.querySelector('[data-rate="headers"]'),
+        yearRanges: document.querySelector('[data-rate="year-ranges"]'),
+        rateForm: document.querySelector('[data-rate="rate-form"]'),
     },
-    headerInputChange: (_ids, _el, e) => {
-      const headerId = e.target.dataset.id;
-      const newValue = e.target.value;
-      if (headerId === Rates.rates.focusedInput) {
-        return;
-      }
-      Rates.setFocusedInput(headerId, e.target.selectionStart);
-      Rates.updateHeader(headerId, newValue);
-    },
-    handleFocus: (_ids, _el, e) => {
-      const cellId = e.target.dataset.id;
-      if (cellId === Rates.rates.focusedInput) {
-        return;
-      }
-      console.log("cellId", cellId);
-      Rates.setFocusedInput({
-        inputID: cellId,
-        cursorPosition: e.target.selectionStart,
-      });
-    },
-  },
+    handlers: {
+        cellInputChange: (_, ids, e) => {
+            const cellId = e.target.dataset.id;
+            const newValue = e.target.value;
 
-  init() {
-    // Every time the store is updated, re-render the app
-    Rates.addEventListener("save", RateApp.render);
+            // If the event key is Tab, we will simply set the focus
+            if (e.key === "Tab") {
+                Rates.setFocusedInput({
+                    inputID: cellId,
+                    cursorPosition: e.target.selectionStart,
+                });
+                return;
+            }
 
-    // Syncs windows/tabs
-    RateApp.filter = getUrlHash();
-    window.addEventListener("hashchange", () => {
-      RateApp.filter = getUrlHash();
-      RateApp.render();
-    });
+            if (e.target.name.includes("Year")) {
+                const yearType = e.target.name;
+                const yearRangeID = ids.yearRange;
+                const year = e.target.value;
+                if (cellId === Rates.rates.focusedInput) {
+                    return;
+                }
+                Rates.setFocusedInput(cellId, e.target.selectionStart);
+                Rates.updateYear(yearRangeID, year, yearType);
+                return;
+            }
 
-    RateApp.render();
-    RateApp.bindRateEvents();
-  },
-  // Event listeners - some of these events can be simplified (header and section)
-  rateHeaderEvent(event, selector, handler) {
-    delegate(RateApp.elements.headers, selector, event, (e) => {
-      let el = e.target.closest("[data-id]");
-      handler(Rates.getHeader(el.dataset.id), el, e);
-    });
-  },
-  rateSectionEvent(event, selector, handler) {
-    delegate(RateApp.elements.yearRanges, selector, event, (e) => {
-      let el = e.target.closest("[data-id]");
-      handler(Rates.getSection(el.dataset.id), el, e);
-    });
-  },
-  rateRowEvent(event, selector, handler) {
-    // Add the proper logic to handle multiple add row buttons
-    delegate(RateApp.elements.yearRanges, selector, event, (e) => {
-      const ids = {
-        yearRange: e.target.closest(".yearRange").dataset.id,
-        row: e.target.closest("[data-id]").dataset.id,
-      };
-      handler(Rates.getRow(ids.yearRange, ids.row), ids, e);
-    });
-  },
+            const nearestRow = e.target.closest("[data-rate='rate-row']");
 
-  // Event binding
-  bindRateEvents() {
-    // Disable enter key, so it doesn't delete, yearRanges or rows
-    document.addEventListener("keydown", (e) => {
-      if (e.code === "Enter") {
-        e.preventDefault();
-        return false;
-      }
-    });
-
-    RateApp.rateHeaderEvent("click", "[data-rate='remove-header']", (rate) => {
-      Rates.removeHeader(rate);
-    });
-    RateApp.rateHeaderEvent(
-      "input",
-      "[data-rate='header-input']",
-      debounce(RateApp.handlers.headerInputChange, 250),
-    );
-    RateApp.rateHeaderEvent(
-      "blur",
-      "[data-rate='header-input']",
-      RateApp.handlers.headerInputChange,
-    );
-    RateApp.rateSectionEvent(
-      "click",
-      "[data-rate='remove-yearRange']",
-      (yearRange) => {
-        Rates.removeSection(yearRange);
-      },
-    );
-    RateApp.rateRowEvent("click", "[data-rate='remove-row']", (_, ids) => {
-      Rates.removeRow(ids.yearRange, ids.row);
-    });
-
-    RateApp.rateRowEvent("keyup", "[data-id]", RateApp.handlers.handleFocus);
-    RateApp.rateRowEvent("blur", "[data-id]", RateApp.handlers.handleFocus);
-    RateApp.rateRowEvent("focus", "[data-id]", RateApp.handlers.handleFocus);
-    RateApp.rateRowEvent(
-      "keyup",
-      "[data-id]",
-      debounce(RateApp.handlers.cellInputChange, 250),
-    );
-
-    // Adding events
-    this.elements.headerButton.addEventListener("click", () =>
-      Rates.addHeader(),
-    );
-    this.elements.yearRangeButton.addEventListener("click", () =>
-      Rates.addSection(),
-    );
-    // Submitting the form
-    this.elements.updateRateButton.addEventListener("click", (e) => {
-      e.preventDefault();
-      // Will issue a post request to the server with the current rates
-      const rates = Rates.rates;
-
-      const url = "/rates/";
-      const options = {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "X-CSRFToken": this.elements.csrfInput.value,
+            if (cellId === Rates.rates.focusedInput) {
+                return;
+            }
+            Rates.setFocusedInput({
+                inputID: cellId,
+                cursorPosition: e.target.selectionStart,
+            });
+            Rates.updateCell(ids.yearRange, nearestRow.dataset.id, cellId, newValue);
         },
-        body: JSON.stringify(rates),
-      };
-      fetch(url, options)
-        .then((response) => {
-          if (response.ok) {
-            notify("success", "Rates updated successfully");
-          }
-        })
-        .catch((error) => {
-          console.log(error);
+        headerInputChange: (_ids, _el, e) => {
+            const headerId = e.target.dataset.id;
+            const newValue = e.target.value;
+            if (headerId === Rates.rates.focusedInput) {
+                return;
+            }
+            Rates.setFocusedInput(headerId, e.target.selectionStart);
+            Rates.updateHeader(headerId, newValue);
+        },
+        handleFocus: (_ids, _el, e) => {
+            const cellId = e.target.dataset.id;
+            if (cellId === Rates.rates.focusedInput) {
+                return;
+            }
+            console.log("cellId", cellId);
+            Rates.setFocusedInput({
+                inputID: cellId,
+                cursorPosition: e.target.selectionStart,
+            });
+        },
+    },
+
+    init() {
+        // Every time the store is updated, re-render the app
+        Rates.addEventListener("save", RateApp.render);
+
+        // Syncs windows/tabs
+        RateApp.filter = getUrlHash();
+        window.addEventListener("hashchange", () => {
+            RateApp.filter = getUrlHash();
+            RateApp.render();
         });
-    });
-    // TODO:
-    // This works fine, but it doesn't feel right, because I want to handle
-    // this event in its own event, like the other ones
-    delegate(
-      RateApp.elements.yearRanges,
-      '[data-rate="add-row"]',
-      "click",
-      (e) => {
-        const yearRangeEl = e.target.closest(".yearRange");
-        if (yearRangeEl) {
-          const newRow = Rates.addRow(yearRangeEl.dataset.id);
-          const newRowElement = RateApp.createRow(
-            newRow,
-            yearRangeEl.dataset.id,
-          );
-          yearRangeEl.appendChild(newRowElement);
-        }
-      },
-    );
 
-    document.addEventListener(
-      "focus",
-      (event) => {
-        if (event.target.tagName === "INPUT") {
-          let lastFocusedInput = event.target.dataset.id;
-          if (lastFocusedInput === Rates.rates.focusedInput) {
-            return;
-          }
-          Rates.setFocusedInput(lastFocusedInput, event.target.selectionStart);
-        }
-      },
-      true,
-    );
-  },
+        RateApp.render();
+        RateApp.bindRateEvents();
+    },
+    // Event listeners - some of these events can be simplified (header and section)
+    rateHeaderEvent(event, selector, handler) {
+        delegate(RateApp.elements.headers, selector, event, (e) => {
+            let el = e.target.closest("[data-id]");
+            handler(Rates.getHeader(el.dataset.id), el, e);
+        });
+    },
+    rateSectionEvent(event, selector, handler) {
+        delegate(RateApp.elements.yearRanges, selector, event, (e) => {
+            let el = e.target.closest("[data-id]");
+            handler(Rates.getSection(el.dataset.id), el, e);
+        });
+    },
+    rateRowEvent(event, selector, handler) {
+        // Add the proper logic to handle multiple add row buttons
+        delegate(RateApp.elements.yearRanges, selector, event, (e) => {
+            const ids = {
+                yearRange: e.target.closest(".yearRange").dataset.id,
+                row: e.target.closest("[data-id]").dataset.id,
+            };
+            handler(Rates.getRow(ids.yearRange, ids.row), ids, e);
+        });
+    },
 
-  // TODO: Remove this after release
-  renderDataPreview() {
-    const el = document.getElementById("data-preview");
-    el.innerText = JSON.stringify(Rates.rates, null, 2);
-  },
+    // Event binding
+    bindRateEvents() {
+        // Disable enter key, so it doesn't delete, yearRanges or rows
+        document.addEventListener("keydown", (e) => {
+            if (e.code === "Enter") {
+                e.preventDefault();
+                return false;
+            }
+        });
 
-  createYearInput(label, data, yearRangeID) {
-    const yearInput = document.createElement("div");
-    yearInput.className = "year-input w-36";
-    yearInput.innerHTML = `
+        RateApp.rateHeaderEvent("click", "[data-rate='remove-header']", (rate) => {
+            Rates.removeHeader(rate);
+        });
+        RateApp.rateHeaderEvent(
+            "input",
+            "[data-rate='header-input']",
+            debounce(RateApp.handlers.headerInputChange, 250),
+        );
+        RateApp.rateHeaderEvent(
+            "blur",
+            "[data-rate='header-input']",
+            RateApp.handlers.headerInputChange,
+        );
+        RateApp.rateSectionEvent(
+            "click",
+            "[data-rate='remove-yearRange']",
+            (yearRange) => {
+                Rates.removeSection(yearRange);
+            },
+        );
+        RateApp.rateRowEvent("click", "[data-rate='remove-row']", (_, ids) => {
+            Rates.removeRow(ids.yearRange, ids.row);
+        });
+
+        RateApp.rateRowEvent("keyup", "[data-id]", RateApp.handlers.handleFocus);
+        RateApp.rateRowEvent("blur", "[data-id]", RateApp.handlers.handleFocus);
+        RateApp.rateRowEvent("focus", "[data-id]", RateApp.handlers.handleFocus);
+        RateApp.rateRowEvent(
+            "keyup",
+            "[data-id]",
+            debounce(RateApp.handlers.cellInputChange, 250),
+        );
+
+        // Adding events
+        this.elements.headerButton.addEventListener("click", () =>
+            Rates.addHeader(),
+        );
+        this.elements.yearRangeButton.addEventListener("click", () =>
+            Rates.addSection(),
+        );
+        // Submitting the form
+        this.elements.updateRateButton.addEventListener("click", (e) => {
+            e.preventDefault();
+            // Will issue a post request to the server with the current rates
+            const rates = Rates.rates;
+
+            const hidden_data = document.getElementById("id_data");
+            const hidden_credit_union = document.getElementById("id_credit_union");
+
+            // The rates must be python json serializable
+            hidden_data.value = JSON.stringify(rates);
+            hidden_credit_union.value = "1";
+            RateApp.elements.rateForm.submit();
+
+
+            // const url = "/rates/";
+            /*const body = {
+              data: JSON.stringify(rates),
+              credit_union: '1'
+            }
+            const options = {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                "X-CSRFToken": this.elements.csrfInput.value,
+              },
+              body: JSON.stringify(body),
+            };
+            fetch(url, options)
+              .then((response) => {
+                if (response.ok) {
+                  notify("success", "Rates updated successfully");
+                }
+              })
+              .catch((error) => {
+                console.log(error);
+              });*/
+        });
+        // TODO:
+        // This works fine, but it doesn't feel right, because I want to handle
+        // this event in its own event, like the other ones
+        delegate(
+            RateApp.elements.yearRanges,
+            '[data-rate="add-row"]',
+            "click",
+            (e) => {
+                const yearRangeEl = e.target.closest(".yearRange");
+                if (yearRangeEl) {
+                    const newRow = Rates.addRow(yearRangeEl.dataset.id);
+                    const newRowElement = RateApp.createRow(
+                        newRow,
+                        yearRangeEl.dataset.id,
+                    );
+                    yearRangeEl.appendChild(newRowElement);
+                }
+            },
+        );
+
+        document.addEventListener(
+            "focus",
+            (event) => {
+                if (event.target.tagName === "INPUT") {
+                    let lastFocusedInput = event.target.dataset.id;
+                    if (lastFocusedInput === Rates.rates.focusedInput) {
+                        return;
+                    }
+                    Rates.setFocusedInput(lastFocusedInput, event.target.selectionStart);
+                }
+            },
+            true,
+        );
+    },
+
+    // TODO: Remove this after release
+    renderDataPreview() {
+        const el = document.getElementById("data-preview");
+        el.innerText = JSON.stringify(Rates.rates, null, 2);
+    },
+
+    createYearInput(label, data, yearRangeID) {
+        const yearInput = document.createElement("div");
+        yearInput.className = "year-input w-36";
+        yearInput.innerHTML = `
         <div class=''>
           <label for="year-input" class="w-full text-slate-700 text-sm font-semibold">${label}</label>
           <div class="flex flex-row h-10 w-full rounded-lg relative bg-transparent mt-1">
@@ -265,58 +263,58 @@ const RateApp = {
               </button>
           </div>
             ${
-              data.error
+            data.error
                 ? `<p class="text-red-500 text-xs italic overflow">${data.error}</p>`
                 : ""
-            }
+        }
         </div>
     `;
 
-    // Direct reference to the input
-    const yearInputElement = yearInput.querySelector("[data-id='year-input']");
+        // Direct reference to the input
+        const yearInputElement = yearInput.querySelector("[data-id='year-input']");
 
-    yearInput
-      .querySelector('[data-rate="increase-year"]')
-      .addEventListener("click", () => {
-        const year = parseInt(yearInputElement.value) + 1;
-        yearInputElement.value = year;
-        Rates.updateYear(yearRangeID, year, camelCase(label));
-      });
+        yearInput
+            .querySelector('[data-rate="increase-year"]')
+            .addEventListener("click", () => {
+                const year = parseInt(yearInputElement.value) + 1;
+                yearInputElement.value = year;
+                Rates.updateYear(yearRangeID, year, camelCase(label));
+            });
 
-    yearInput
-      .querySelector('[data-rate="decrease-year"]')
-      .addEventListener("click", () => {
-        const year = parseInt(yearInputElement.value) - 1;
-        yearInputElement.value = year;
-        Rates.updateYear(yearRangeID, year, camelCase(label));
-      });
-    return yearInput;
-  },
+        yearInput
+            .querySelector('[data-rate="decrease-year"]')
+            .addEventListener("click", () => {
+                const year = parseInt(yearInputElement.value) - 1;
+                yearInputElement.value = year;
+                Rates.updateYear(yearRangeID, year, camelCase(label));
+            });
+        return yearInput;
+    },
 
-  // Element creation
-  createHeader(header) {
-    const headerElement = document.createElement("div");
-    // headerElement.dataset.id = header.id;
-    headerElement.className = "header relative flex flex-col";
-    // We must use pointer-events: none on the svg; to allow the click event
-    // to pass through to the button element
-    // const emptyInput = createInput({
-    //     id: "empty_header",
-    //     className: "opacity-0",
-    // });
-    // headerElement.appendChild(emptyInput);
+    // Element creation
+    createHeader(header) {
+        const headerElement = document.createElement("div");
+        // headerElement.dataset.id = header.id;
+        headerElement.className = "header relative flex flex-col";
+        // We must use pointer-events: none on the svg; to allow the click event
+        // to pass through to the button element
+        // const emptyInput = createInput({
+        //     id: "empty_header",
+        //     className: "opacity-0",
+        // });
+        // headerElement.appendChild(emptyInput);
 
-    insertHTML(
-      headerElement,
-      `
+        insertHTML(
+            headerElement,
+            `
             ${
-              createInput({
-                id: header.id,
-                name: "header",
-                dataset: { rate: "header-input", id: header.id },
-                type: "tel", // "number" doesn't allow for setSelectionRange
-                pattern: "[0-9]*",
-              }).outerHTML
+                createInput({
+                    id: header.id,
+                    name: "header",
+                    dataset: {rate: "header-input", id: header.id},
+                    type: "tel", // "number" doesn't allow for setSelectionRange
+                    pattern: "[0-9]*",
+                }).outerHTML
             }
         <button
          class="absolute -top-2 -right-2 p-1 text-white bg-slate-300 rounded-md hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500" 
@@ -327,55 +325,55 @@ const RateApp = {
             </svg>
          </button>
       `,
-    );
-    headerElement.querySelector('[data-rate="header-input"]').value =
-      header.name;
-    return headerElement;
-  },
-  createRow(row, yearRangeID) {
-    const rowElement = document.createElement("div");
-    rowElement.className = "flex gap-x-4 relative hover:bg-slate-200 py-1";
-    rowElement.dataset.id = row.id;
-    rowElement.dataset.rate = "rate-row";
+        );
+        headerElement.querySelector('[data-rate="header-input"]').value =
+            header.name;
+        return headerElement;
+    },
+    createRow(row, yearRangeID) {
+        const rowElement = document.createElement("div");
+        rowElement.className = "flex gap-x-4 relative hover:bg-slate-200 py-1";
+        rowElement.dataset.id = row.id;
+        rowElement.dataset.rate = "rate-row";
 
-    // Rows cell will equal the length of the headers array + 1
-    // The + 1 is for the first cell which will be the month term
-    const rowFragment = document.createDocumentFragment();
+        // Rows cell will equal the length of the headers array + 1
+        // The + 1 is for the first cell which will be the month term
+        const rowFragment = document.createDocumentFragment();
 
-    const monthSpan = document.createElement("span");
-    const input = createInput({
-      id: row.id + "-cell-month",
-      value: row.months.value,
-    });
-    monthSpan.appendChild(input);
-    rowFragment.appendChild(monthSpan);
+        const monthSpan = document.createElement("span");
+        const input = createInput({
+            id: row.id + "-cell-month",
+            value: row.months.value,
+        });
+        monthSpan.appendChild(input);
+        rowFragment.appendChild(monthSpan);
 
-    const yearRange = Rates.rates.yearRanges.find(
-      (yearRange) => yearRange.id === yearRangeID,
-    );
-    const cells = yearRange.rows.find((r) => r.id === row.id).cells;
+        const yearRange = Rates.rates.yearRanges.find(
+            (yearRange) => yearRange.id === yearRangeID,
+        );
+        const cells = yearRange.rows.find((r) => r.id === row.id).cells;
 
-    for (let i = 0; i < cells.length; i++) {
-      const cellDiv = document.createElement("div");
-      const value = !cells[i].value.includes("Placeholder")
-        ? cells[i].value
-        : "";
-      const rightElement = value ? "<b>%</b>" : "<b class='text-red-400'>%</b>";
-      const input = createInput({
-        label: "",
-        name: "",
-        value: value,
-        placeholder: "99.99",
-        id: cells[i].id,
-        type: "tel",
-        pattern: "[0-9]*",
-        rightElement: rightElement,
-      });
-      cellDiv.appendChild(input);
-      rowFragment.appendChild(cellDiv);
-    }
+        for (let i = 0; i < cells.length; i++) {
+            const cellDiv = document.createElement("div");
+            const value = !cells[i].value.includes("Placeholder")
+                ? cells[i].value
+                : "";
+            const rightElement = value ? "<b>%</b>" : "<b class='text-red-400'>%</b>";
+            const input = createInput({
+                label: "",
+                name: "",
+                value: value,
+                placeholder: "99.99",
+                id: cells[i].id,
+                type: "tel",
+                pattern: "[0-9]*",
+                rightElement: rightElement,
+            });
+            cellDiv.appendChild(input);
+            rowFragment.appendChild(cellDiv);
+        }
 
-    const removeRowButton = `
+        const removeRowButton = `
         <button
          class="absolute -top-2 -right-2 p-1 text-white bg-slate-300 rounded-md hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500" 
          data-rate="remove-row" 
@@ -385,35 +383,35 @@ const RateApp = {
             </svg>
          </button>
     `;
-    rowElement.insertAdjacentHTML("afterbegin", removeRowButton);
+        rowElement.insertAdjacentHTML("afterbegin", removeRowButton);
 
-    // Append the DocumentFragment to the rowElement
-    rowElement.appendChild(rowFragment);
-    return rowElement;
-  },
+        // Append the DocumentFragment to the rowElement
+        rowElement.appendChild(rowFragment);
+        return rowElement;
+    },
 
-  createSection(yearRange) {
-    const yearRangeElement = document.createElement("div");
-    yearRangeElement.className =
-      "yearRange p-4 bg-slate-100 rounded flex flex-col gap-y-4 relative";
-    yearRangeElement.dataset.id = yearRange.id;
+    createSection(yearRange) {
+        const yearRangeElement = document.createElement("div");
+        yearRangeElement.className =
+            "yearRange p-4 bg-slate-100 rounded flex flex-col gap-y-4 relative";
+        yearRangeElement.dataset.id = yearRange.id;
 
-    const rows = yearRange.rows.map((row) => this.createRow(row, yearRange.id));
+        const rows = yearRange.rows.map((row) => this.createRow(row, yearRange.id));
 
-    const startYearInput = RateApp.createYearInput(
-      "Starting Year",
-      yearRange.startingYear,
-      yearRange.id,
-    );
-    const endYearInput = RateApp.createYearInput(
-      "Ending Year",
-      yearRange.endingYear,
-      yearRange.id,
-    );
+        const startYearInput = RateApp.createYearInput(
+            "Starting Year",
+            yearRange.startingYear,
+            yearRange.id,
+        );
+        const endYearInput = RateApp.createYearInput(
+            "Ending Year",
+            yearRange.endingYear,
+            yearRange.id,
+        );
 
-    insertHTML(
-      yearRangeElement,
-      `<div data-rate="yearRange-range" class='flex flex-wrap gap-x-4 gap-y-8 relative '>
+        insertHTML(
+            yearRangeElement,
+            `<div data-rate="yearRange-range" class='flex flex-wrap gap-x-4 gap-y-8 relative '>
         </div>
         <button
          class="absolute -top-2 -right-2 p-1 text-white bg-slate-300 rounded-md hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500" 
@@ -429,10 +427,10 @@ const RateApp = {
             <div class="px-1 flex gap-x-4">
             <p class='rounded w-24 text-slate-400'> Months </p>
         ${Rates.rates.headers
-          .map((header) => {
-            return `<p class='rounded w-24 text-slate-400'> ${header.name} </p>`;
-          })
-          .join("")}
+                .map((header) => {
+                    return `<p class='rounded w-24 text-slate-400'> ${header.name} </p>`;
+                })
+                .join("")}
             </div>
         ${rows.map((row) => row.outerHTML).join("")}
         </div>
@@ -447,69 +445,96 @@ const RateApp = {
           </button>
         </div>
         `,
-    );
+        );
 
-    yearRangeElement
-      .querySelector("[data-rate='yearRange-range']")
-      .appendChild(startYearInput);
-    yearRangeElement
-      .querySelector("[data-rate='yearRange-range']")
-      .appendChild(endYearInput);
+        yearRangeElement
+            .querySelector("[data-rate='yearRange-range']")
+            .appendChild(startYearInput);
+        yearRangeElement
+            .querySelector("[data-rate='yearRange-range']")
+            .appendChild(endYearInput);
 
-    return yearRangeElement;
-  },
-  focusInput() {
-    const focusedInput = Rates.rates.focusedInput;
-    const input = document.querySelector(`[data-id='${focusedInput.id}']`);
-    console.log("focusedInput", focusedInput);
-    console.log("input", input);
+        return yearRangeElement;
+    },
+    focusInput() {
+        const focusedInput = Rates.rates.focusedInput;
+        const input = document.querySelector(`[data-id='${focusedInput.id}']`);
 
-    if (!input) return;
-    input.setSelectionRange(focusedInput.position, focusedInput.position);
-    input.focus();
-  },
-  render() {
-    console.log("Rendering...");
-    RateApp.renderDataPreview();
-    // This is not super efficient, but it's fine for now
-    // An alternative would be to simply update what's changed
-    // But that would require diffing the DOM, might look into this later.
+        if (!input) return;
+        input.setSelectionRange(focusedInput.position, focusedInput.position);
+        input.focus();
+    },
+    render() {
+        console.log("Rendering...");
+        RateApp.renderDataPreview();
+        // This is not super efficient, but it's fine for now
+        // An alternative would be to simply update what's changed
+        // But that would require diffing the DOM, might look into this later.
 
-    // So for now, we'll just re-render everything
-    RateApp.elements.headers.replaceChildren(
-      ...Rates.rates.headers.map((header) => {
-        return RateApp.createHeader(header);
-      }),
-    );
-    RateApp.elements.headers.insertAdjacentElement(
-      "afterbegin",
-      createInput({ id: "empty_header", className: "opacity-0" }),
-    );
-    RateApp.elements.yearRanges.replaceChildren(
-      ...Rates.rates.yearRanges.map((yearRange) => {
-        return RateApp.createSection(yearRange);
-      }),
-    );
+        // So for now, we'll just re-render everything
+        RateApp.elements.headers.replaceChildren(
+            ...Rates.rates.headers.map((header) => {
+                return RateApp.createHeader(header);
+            }),
+        );
+        RateApp.elements.headers.insertAdjacentElement(
+            "afterbegin",
+            createInput({id: "empty_header", className: "opacity-0"}),
+        );
+        RateApp.elements.yearRanges.replaceChildren(
+            ...Rates.rates.yearRanges.map((yearRange) => {
+                return RateApp.createSection(yearRange);
+            }),
+        );
 
-    // The first yearRange starting year will always be the value of the
-    // latest-year input field, which is hidden in the jinja template
-    const lastYear =
-      document.getElementById("latest-year").value !== "{{ last_year }}"
-        ? document.getElementById("latest-year").value
-        : new Date().getFullYear();
-    const yearRange = Rates.rates.yearRanges[0];
-    if (yearRange && yearRange.startingYear.value !== lastYear) {
-      Rates.updateYear(yearRange.id, lastYear, "startingYear");
-    }
+        // The first yearRange starting year will always be the value of the
+        // latest-year input field, which is hidden in the jinja template
+        const lastYear =
+            document.getElementById("latest-year").value !== "{{ last_year }}"
+                ? document.getElementById("latest-year").value
+                : new Date().getFullYear();
+        const yearRange = Rates.rates.yearRanges[0];
+        if (yearRange && yearRange.startingYear.value !== lastYear) {
+            Rates.updateYear(yearRange.id, lastYear, "startingYear");
+        }
 
-    // focus on the last input
-    // I know this is weird, but the ux should be better for
-    // the user
-    RateApp.focusInput();
-  },
+        // focus on the last input
+        // I know this is weird, but the ux should be better for
+        // the user
+        RateApp.focusInput();
+    },
 };
 
 RateApp.init();
 
 //TODO: Finish backend implementation - 90%
 //TODO: Add functionality to paste blocks of excel
+
+
+let i = {
+    'csrfmiddlewaretoken': ['PSIoug5op8GXZSEf179THQZsXBORqP34ujbkber0uXLSNwgSFAvIbf9tOICUIxsz'],
+    'data': [{
+        "headers": [{
+            "id": "955e230a-0389-407d-918c-6a2e998b6683",
+            "name": "Tier1",
+            "error": null
+        }],
+        "yearRanges": [{
+            "id": "7a52b9c0-5931-4105-8d33-1ce724d7d30c",
+            "startingYear": {"value": 2023, "error": ""},
+            "endingYear": {"value": "2021", "error": null},
+            "rows": [{
+                "id": "ad9b8d07-7a04-4f2f-8988-2270c6439e11",
+                "months": {"value": 12, "error": null},
+                "cells": [{
+                    "id": "ae347c58-213c-45c1-823b-ace31427cca0",
+                    "value": "Placeholder1",
+                    "error": null
+                }]
+            }]
+        }],
+        "focusedInput": {}
+    }],
+    'credit_union': ['1'],
+
+}

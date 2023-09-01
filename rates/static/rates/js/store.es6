@@ -40,7 +40,7 @@ export const RateStore = class extends EventTarget {
   _readStorage() {
     const num = (this.rates && this?.rates.headers.length + 1) || 1;
     const headers = (this.rates && this.rates.headers) || [
-      { id: uuid(), name: "Tier " + num },
+      { id: uuid(), name: ("Tier " + num).trim() },
     ];
     const data =
       window.localStorage.getItem(this.localStorageKey) ||
@@ -48,7 +48,7 @@ export const RateStore = class extends EventTarget {
         headers: [
           {
             id: uuid(),
-            name: "Tier" + num,
+            name: ("Tier" + num).trim(),
             error: null,
           },
         ],

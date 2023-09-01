@@ -12,6 +12,7 @@ django-jinja = "^2.10.2"
 black = "^23.7.0"
 django-extensions = "^3.2.3"
 django-compressor = "^4.4"
+jsonschema = "^4.19.0"
 
 
 [build-system]
